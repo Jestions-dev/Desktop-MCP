@@ -1,0 +1,9 @@
+﻿{
+  "name": "desktop-mcp-frame",
+  "version": "1.0.0",
+  "private": true,
+  "description": "desktop-mcp 鐨勮瀵熸娓叉煋鍣細涓€涓€忔槑銆佺偣鍑荤┛閫忋€侀噰闆嗘帓闄ょ殑鍙戝厜杈规绐楀彛",
+  "main": "main.js",
+  "license": "MIT"
+}
+

@@ -1,0 +1,18 @@
+# 观察框的便携运行时（365 MB）—— 不进版本库
+runtime/
+
+# frame/node_modules（如果为了兼容裸运行时建了 junction）
+frame/node_modules/
+
+# 可选的调试截图
+tools/_shots/
+
+__pycache__/
+*.py[cod]
+.venv/
+venv/
+*.egg-info/
+dist/
+build/
+.vscode/
+.idea/

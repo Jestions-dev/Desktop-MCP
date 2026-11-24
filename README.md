@@ -52,6 +52,32 @@ python -m desktop_mcp.server                  # 全部 16 个工具
 
 ---
 
+## 实机能做到什么
+
+**输入**：`win+r` 里塞一条几百字符的启动命令，不执行，只停在框里 ——
+`desktop_uia_set_value` 直接写进 Edit 控件，不靠抢焦点打字。
+
+![Win+R 长命令](assets/screenshots/1-run-command.png)
+
+**按控件点复选框**：Cloudflare Turnstile，点之前 / 点之后。
+
+| 点之前 | 点之后 |
+|---|---|
+| ![未通过](assets/screenshots/2-turnstile-before.png) | ![通过](assets/screenshots/3-turnstile-after.png) |
+
+**算账**：12 × 34，六个按钮全部用 `desktop_uia_click`（Invoke 模式，**鼠标一次没动**）。
+
+| 结果 | 同一时刻的控件树 |
+|---|---|
+| ![计算器](assets/screenshots/4-calculator.png) | ![控件树](assets/screenshots/5-uia-tree.png) |
+
+右图是同一时刻 `desktop_uia_snapshot` 的输出，能直接看到
+`[13] Text '表达式为 12 × 34='` 和 `[14] Text '显示为 408'` —— 左图是它看到的界面，
+右图是它怎么看到界面的。
+
+> 五张都是实拍，没有摆拍。Turnstile 那两张用的是 Cloudflare 的测试 sitekey
+> （`3x…FF`，强制交互），所以底部带一行"仅用于测试"的提示。
+
 ## 工具（25 个，其中 1 个默认隐藏）
 
 ```
@@ -230,7 +256,16 @@ time_jitter=0.15 时间也随机化 —— 设 0 会严格照录制节奏，重�
 桌面上那个「Microsoft Edge」图标（ListItem），不是浏览器窗口 —— 等窗口就带上
 `control_type="Window"`，或者直接 `desktop_list_windows(query=…)` 看标题。
 
-**索引只对同一份快照有效。** 每次 `click` / `set_value` 都会按同样参数重走一遍树再动手（不是拿几秒前的缓存去点），但界面结构变了仍要重新 `snapshot`。
+**索引只对同一份快照有效，而且动手前会校验身份。** 每次 `click` / `set_value` 都按同样参数重走一遍树，
+再比对目标节点的「类型 + 名字 + AutomationId」；对不上就**拒绝执行**并让你重新快照，不会赌。
+
+```
+实测：计算器按下第一个数字后，"显示为 12" 让树多了一层
+     原来是 Button「三」的位置，变成了一个 Text 节点 ——
+     没有校验时就会去点它（换个界面，那可能是「删除」）
+```
+
+**写内容会改窗口标题**（记事本拿第一行当标题），所以按标题找窗口时要注意；用 `hwnd` 最稳。
 
 ---
 

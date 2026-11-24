@@ -1,12 +1,13 @@
 {
   "name": "dsh-desktop-mcp",
-  "version": "1.1.1",
+  "version": "1.2.0",
   "description": "Windows desktop automation for DeepSeek Harness — screenshots, Win32 input, window control, and a UIA accessibility-tree path, bridged from the desktop-mcp Python MCP server through DSH's in-box MCP client.",
   "license": "MIT",
   "type": "module",
   "files": [
     "cordis.patch.yml",
-    "README.md"
+    "README.md",
+    "icon.png"
   ],
   "keywords": [
     "dsh",
@@ -37,5 +38,6 @@
   "bugs": {
     "url": "https://github.com/Jestions-dev/Desktop-MCP/issues"
   },
-  "homepage": "https://github.com/Jestions-dev/Desktop-MCP#readme"
+  "homepage": "https://github.com/Jestions-dev/Desktop-MCP#readme",
+  "icon": "./icon.png"
 }

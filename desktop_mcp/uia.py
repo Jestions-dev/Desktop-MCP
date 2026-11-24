@@ -191,7 +191,15 @@ def _format(nodes, title: str, hwnd: int, limit: int, truncated: bool) -> str:
 
 # ── 快照缓存 ────────────────────────────────────────────────────────────────
 
-_LAST: dict[str, Any] = {"hwnd": None, "max_depth": 6, "max_nodes": 300, "offscreen": False}
+_LAST: dict[str, Any] = {"hwnd": None, "max_depth": 6, "max_nodes": 300, "offscreen": False,
+                         "identity": []}
+
+
+def _identity(control) -> tuple:
+    """一个控件的"身份证"：类型 + 名字 + AutomationId + 矩形。"""
+    rect = _rect_of(control)
+    return (_type_of(control), _name_of(control),
+            str(_safe(lambda: control.AutomationId, "") or ""), rect)
 
 
 def snapshot(window: Any = None, max_depth: int = 6, max_nodes: int = 300,
@@ -203,7 +211,8 @@ def snapshot(window: Any = None, max_depth: int = 6, max_nodes: int = 300,
 
     nodes = _walk(root, max_depth, max_nodes, bool(include_offscreen))
     _LAST.update(hwnd=hwnd, max_depth=max_depth, max_nodes=max_nodes,
-                 offscreen=bool(include_offscreen), title=title)
+                 offscreen=bool(include_offscreen), title=title,
+                 identity=[_identity(c) for _, c in nodes])
     text = _format(nodes, title, hwnd, max_nodes, len(nodes) >= max_nodes)
     return text, hwnd, title
 
@@ -217,6 +226,20 @@ def _refind(index: int):
     nodes = _walk(root, _LAST["max_depth"], _LAST["max_nodes"], _LAST["offscreen"])
     if index < 0 or index >= len(nodes):
         raise UiaError(f"index {index} 超出范围（这份树有 {len(nodes)} 个节点，先重新快照）")
+
+    # ⚠ 界面一变，同样的索引就可能指向别的控件。
+    # 实测：计算器按下第一个数字后，"显示为 12" 让树多了一层，
+    # 原本指向「三」的索引变成了一个 Text 节点 —— 差点点错东西。
+    # 所以动手前对一遍身份证，不一致就拒绝，别赌。
+    expected = _LAST.get("identity") or []
+    if index < len(expected):
+        actual = _identity(nodes[index][1])
+        want = expected[index]
+        if (actual[0], actual[1], actual[2]) != (want[0], want[1], want[2]):
+            raise UiaError(
+                "界面结构变了，索引 %d 现在指向 %s %r（快照时是 %s %r）—— "
+                "重新 desktop_uia_snapshot 再点" % (
+                    index, actual[0], _label(actual[1], 30), want[0], _label(want[1], 30)))
     return nodes[index][1]
 
 

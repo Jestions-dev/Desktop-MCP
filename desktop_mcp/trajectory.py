@@ -124,14 +124,27 @@ def plan_path(traj: dict, start_xy: tuple[int, int], end_xy: tuple[int, int],
     # 时间按**路径**缩放比走（不是直线比）—— 人的速度相对路程恒定
     t_scale = scale if (scale_time and scale > 1e-6) else 1.0
 
-    out: list[tuple[float, float, float]] = []
-    for (ox, oy, t) in pts:
+    # ⚠ 抖动幅度必须跟着缩放走（2026-11-14 修，B站评论指出，实测确有此问题）：
+    #   固定 ±2px 在 scale 很小时会把路径撑变形 —— 120px 的目标配 58 个点，
+    #   每点抖 ±2px 能让等效速度算到真人的 2 倍以上。
+    #   抖动扰动的是"路径的形状"，所以它应该和路径一起缩放；放大时不跟着放大。
+    j_eff = jitter_px * min(1.0, scale) if jitter_px > 0 else 0.0
+
+    def _place(ox: float, oy: float) -> tuple[float, float]:
         zx, zy = ox * scale, oy * scale
-        wx = ex + (zx * cos_r - zy * sin_r)
-        wy = ey + (zx * sin_r + zy * cos_r)
-        if jitter_px > 0:
-            wx += rng.uniform(-jitter_px, jitter_px)
-            wy += rng.uniform(-jitter_px, jitter_px)
+        return (ex + (zx * cos_r - zy * sin_r),
+                ey + (zx * sin_r + zy * cos_r))
+
+    # 不加抖动的"理想路径"，用来量出抖动把路程加长了多少
+    ideal = [_place(float(ox), float(oy)) for (ox, oy, _t) in pts]
+    planned_len = sum(math.hypot(b[0] - a[0], b[1] - a[1])
+                      for a, b in zip(ideal, ideal[1:]))
+
+    out: list[tuple[float, float, float]] = []
+    for (ox, oy, t), (wx, wy) in zip(pts, ideal):
+        if j_eff > 0:
+            wx += rng.uniform(-j_eff, j_eff)
+            wy += rng.uniform(-j_eff, j_eff)
         out.append((wx, wy, float(t) * t_scale))
 
     # 残差修正：缩放旋转后首末点会有零点几像素的误差，按比例分摊掉，
@@ -146,6 +159,20 @@ def plan_path(traj: dict, start_xy: tuple[int, int], end_xy: tuple[int, int],
                       int(round(y + dy0 * (1 - u) + dy1 * u)),
                       int(round(t))))
     fixed[-1] = (int(round(ex)), int(round(ey)), fixed[-1][2])
+
+    # ⚠ 抖动把路程变长了，时间就得跟着变长（2026-11-14 修）。
+    #   否则路程↑而时长不动 ⇒ 等效速度虚高，直接违背「人手速度大致恒定」
+    #   这条 —— 而整条时间缩放正是建立在它上面（r=+0.86 那个测量）。
+    #   物理上也说得通：手抖走的路更多，就该多花一点时间。
+    if j_eff > 0 and planned_len > 1e-6:
+        actual_len = sum(math.hypot(b[0] - a[0], b[1] - a[1])
+                         for a, b in zip(fixed, fixed[1:]))
+        k = actual_len / planned_len
+        # 上限 2 倍：抖动再离谱也不能让点击迟到，动作总量是行为特征
+        if k > 1.0:
+            k = min(2.0, k)
+            fixed = [(x, y, int(round(t * k))) for (x, y, t) in fixed]
+
     return fixed
 
 

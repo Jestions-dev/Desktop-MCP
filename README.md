@@ -52,51 +52,313 @@ python -m desktop_mcp.server                  # 全部 16 个工具
 
 ---
 
-## 工具（17 个）
+## 工具（25 个，其中 1 个默认隐藏）
 
-**全部带 `desktop_` 前缀** —— 裸名（`click`、`wait`）在客户端省略命名空间时无法自解释，
-也容易和别的 MCP 服务器的同名工具混淆。这和 Playwright MCP 用 `browser_click` 是同一个理由。
+```
+看      desktop_foreground_window  desktop_list_windows  desktop_screenshot
+        desktop_measure_window     desktop_uia_snapshot  desktop_monitors
+动      desktop_click   desktop_move  desktop_drag  desktop_scroll
+        desktop_type    desktop_press desktop_click_human
+按控件  desktop_uia_click  desktop_uia_set_value  desktop_uia_focus  desktop_uia_wait_for
+窗口    desktop_focus_window
+观察框  desktop_highlight  desktop_frame_start  desktop_frame_stop  desktop_frame_status
+杂项    desktop_wait  desktop_clipboard  desktop_launch（默认隐藏）
+```
 
-### 看
+两条路，别用混：
 
-| 工具 | 说明 |
-|---|---|
-| `desktop_screenshot` | **默认截当前前台窗口**。返回 MCP image content，模型直接看见 |
-| `desktop_foreground_window` | 前台是哪个窗口 + 截屏 |
-| `desktop_list_windows` | 枚举可见窗口（前台排最前），可按标题/进程名查 |
-| `desktop_measure_window` | 量窗口：整窗/客户区矩形，**并直接给出 0–1000 分数坐标** |
+```
+坐标路（截图 + 像素）        什么都看得见，但要眼睛估位置，窗口一动就得重看
+控件路（UIA 树 + 索引）      纯文本、精确、不动鼠标，但 Electron/Chromium 里常常拿不到树
+```
 
-### 动
+---
 
-| 工具 | 说明 |
-|---|---|
-| `desktop_click` | 左/右/中键，支持连击；完成后自动截屏 |
-| `desktop_type` | 输入文字，**支持中文**；`method="clipboard"` 走剪贴板粘贴 |
-| `desktop_press` | 组合键，如 `"ctrl+s"`、`["ctrl","shift","esc"]` |
-| `desktop_move` | 只移动，不点击 |
-| `desktop_drag` | 分步拖动，能触发画布/滑块的中间事件 |
-| `desktop_scroll` | 滚轮，一格 = 120 |
+### 一、先看
 
-### 控制流
+#### `desktop_foreground_window` `screenshot`
 
-| 工具 | 说明 |
-|---|---|
-| `desktop_focus_window` | 定位窗口后做动作：`activate`（默认，切前台、最小化的会自动还原）、`maximize`、`minimize`、`restore`。切前台含 `AttachThreadInput` 绕前台锁定 |
-| `desktop_wait` | 等界面加载/动画结束，可选截屏确认（**固定等待**；要"等条件成立"用 `list_windows` 轮询） |
-| `desktop_highlight` | 在屏幕上画发光框标出位置（给人看的）；`hide=true` 收起 |
-| `desktop_frame_start` | 启动观察框渲染进程（常驻）。平时不用手动调，highlight 会自动起 |
-| `desktop_frame_stop` | 收掉渲染进程、释放那个 Electron 子进程（省资源） |
-| `desktop_frame_status` | 看渲染进程状态：在不在跑、hwnd、命令端口、报错。框画不出来先查这个 |
+当前哪个窗口在前台，含进程名、矩形，并截屏。
 
-### 坐标系（唯一的真相）
+**输入之前先调它** —— 确认焦点真在你要操作的那个窗口上，免得把字打到别处。
+
+#### `desktop_list_windows` `query | limit`
+
+列可见窗口（前台排最前），或按关键词查。三个用途：
+
+```
+① 操作某个窗口前拿 hwnd
+② 看某程序/网页有没有加载完（标题变了就是加载完了）
+③ 没有 window 参数的工具用 query 定位目标
+```
+
+#### `desktop_screenshot` `window | hwnd | region | monitor | client_only | max_width`
+
+**默认截当前前台窗口**，返回真正的图片附件。窗口被挡、一部分在屏幕外也能截到（PrintWindow 让它自己重绘）。
+
+```
+window="Chrome" 或 hwnd=12345     截别的窗口
+window=false                      截整屏
+client_only=true                  只要客户区，去掉标题栏和边框
+max_width=1600                    降分辨率省 token，默认 1600
+```
+
+#### `desktop_measure_window` `hwnd | query`
+
+量窗口矩形，**并直接给出中心点的 0–1000 分数坐标**。
+
+```
+要用分数坐标点控件时先用它换算 —— 比从截图肉眼估准得多。
+注意坐标系：窗口矩形是物理像素，截图可能是缩放过的。
+```
+
+#### `desktop_uia_snapshot` `window | max_depth | max_nodes | include_offscreen`
+
+抓无障碍树，输出纯文本控件清单：
+
+```
+UIA 快照 · 「任务栏」 hwnd=0x101C0 · 28 个节点
+⚡可点 ✎可写 ✔可勾 ◎可选中
+[0] Pane '任务栏' @0,1528,2560x72
+  [8] Button '显示隐藏的图标' @2021,1528,48x72  ⚡
+  [20] Button '音量 扬声器 (Realtek(R) Audio): 16%' @2303,1528,36x72  ⚡
+```
+
+```
+原生 / WinUI（资源管理器、设置、对话框、任务栏）  → 树很全，优先用它
+Electron / Chromium（DSH 自己、VSCode、浏览器）    → 常只有窗框几个按钮，退回截图
+max_depth 默认 6（上限 16），max_nodes 默认 300（上限 2000）
+```
+
+#### `desktop_monitors`
+
+显示器几何 + 虚拟桌面范围。多屏、异构缩放时要先知道边界在哪。
+
+---
+
+### 二、再动
+
+#### `desktop_click` `x,y | fx,fy | button | clicks | wait | screenshot`
+
+点一下，默认左键单击，**完成后自动截屏返回**。坐标缺省 = 当前光标位置。
+
+```
+分步移动再点 → 能触发悬停效果（下拉菜单、tooltip）
+clicks=2     双击
+wait=0.35    点完等几秒再截图，界面慢就调大
+```
+
+#### `desktop_move` `x,y | fx,fy`
+
+只移动不点击。用来展开 hover 菜单、显示 tooltip，或把鼠标从挡视线的地方挪开。
+
+#### `desktop_drag` `from_* → to_* | button | duration`
+
+按住拖动，**分 20 步移动** —— 画布、滑块、拖放目标都需要中间事件，一步跳过去它们收不到。
+
+#### `desktop_scroll` `amount | horizontal | x,y | fx,fy`
+
+滚轮，正数向上/向右，一格 = 120。看网页一屏约 3 格（-360）。
+
+**要滚某个区域必须给坐标**，否则滚的是光标当前所在的那个窗口。
+
+#### `desktop_type` `text | method | x,y | fx,fy | per_char`
+
+输入文字，**支持中文**（UNICODE 注入，绕过键盘布局）。
+
+```
+先点一下：给 x/y 会先移过去点一下，确保焦点落在目标上
+method="clipboard"   剪贴板粘贴（会覆盖你剪贴板里的内容，只在 unicode 无效时用）
+per_char=0.02        中文建议 0.02；默认 0.006
+```
+
+**⚠ 别把 per_char 设 0**：全速注入时记事本这类程序会把字符顺序搞乱、甚至和已有文本绞在一起，而工具照样报成功（实测踩过）。
+
+#### `desktop_press` `keys | wait`
+
+组合键，如 `"ctrl+s"`、`"alt+tab"`、`"win+r"`，或 `["ctrl","shift","esc"]`。顺序按下、逆序抬起，和真人按键一致。
+
+#### `desktop_click_human` `x,y | fx,fy | trajectory | speed | jitter | time_jitter`
+
+用**真人录制的鼠标轨迹**移过去再点 —— 不是两点一线。轨迹带着人手的过冲回调、不对称加减速和微小抖动，行为分析上更像人（普通 `desktop_click` 是瞬移式直线，一眼假）。
+
+```
+speed=2          节奏减半（想更慢更"人"）
+jitter=2         每个点的随机抖动像素
+time_jitter=0.15 时间也随机化 —— 设 0 会严格照录制节奏，重复调用一模一样
+```
+
+---
+
+### 三、按控件（UIA 那一腿）
+
+#### `desktop_uia_click` `index | button | clicks`
+
+点快照里第 N 个控件。**优先走 UIA 的 Invoke / DoDefaultAction** —— 等于让程序自己按，**不动鼠标**，窗口被挡也能按。都不支持才退回鼠标点矩形中心。
+
+```
+已点 [11] Button '加粗(Ctrl+B)'（DoDefaultAction，没有动鼠标）
+```
+
+#### `desktop_uia_set_value` `index | text`
+
+往第 N 个控件写值。**优先 ValuePattern**（程序自己设值，不动键盘），写不了才点进去全选再打字。
+
+```
+输入框优先用它，比 desktop_type 稳 —— 不受输入法、焦点、键盘布局影响
+```
+
+#### `desktop_uia_focus` `index`
+
+只把焦点给第 N 个控件，不点它。
+
+#### `desktop_uia_wait_for` `window | name | control_type | timeout | interval`
+
+等某个控件出现，**比 sleep 固定秒数靠谱**：界面什么时候好，让它自己说。
+
+```
+等运行框出现   desktop_uia_wait_for(control_type="Edit", timeout=3)
+等网页加载完   desktop_uia_wait_for(name="登录", timeout=15)
+```
+
+**索引只对同一份快照有效。** 每次 `click` / `set_value` 都会按同样参数重走一遍树再动手（不是拿几秒前的缓存去点），但界面结构变了仍要重新 `snapshot`。
+
+---
+
+### 四、窗口与观察
+
+#### `desktop_focus_window` `hwnd | query | action`
+
+激活 / 最大化 / 最小化 / 还原一个窗口。
+
+**Windows 有前台锁定**：激活可能失败，提示里会说明 —— **不要反复重试**，让用户手点一下那个窗口。
+
+#### `desktop_wait` `seconds | screenshot`
+
+固定等待。**能用 `desktop_uia_wait_for` 的地方就别用它** —— 等条件比等时间准。
+
+#### `desktop_highlight` `region | hwnd | query | x,y,width,height | hide`
+
+在屏幕上画一个发光框，标出正在关注的位置 —— **给人看的**：用户能看见 agent 在看哪一块，不用猜。做连续操作、或长任务中途时用它。
+
+#### `desktop_frame_start` / `desktop_frame_stop` / `desktop_frame_status`
+
+观察框的渲染进程（常驻 Electron 子进程）。平时不用手动调 —— `desktop_highlight` 会自动起。
+
+**框画不出来时先查 `desktop_frame_status`** —— 常见原因是 node_modules 链接丢了或 Electron 找不到。
+
+---
+
+### 五、杂项
+
+#### `desktop_clipboard` `op | text`
+
+读写剪贴板文本。`op=get`（默认）读，`op=set` 写。
+
+```
+命中率最高的用法：从网页/文档里拿一段，再粘贴到别处
+读之前不用清空，写会覆盖原有内容
+```
+
+#### `desktop_launch` `target | args | cwd | wait | expect`（**默认隐藏**）
+
+启动应用或 URL，等新窗口出现并回报 hwnd / 标题 / 矩形。
+
+平时优先走这条路：
+
+```
+desktop_press("win+r")
+desktop_uia_wait_for(control_type="Edit", timeout=3)   ← 等运行框真的出现，别瞎打
+desktop_type("edge")
+desktop_press("enter")
+desktop_uia_wait_for(name="Edge", timeout=10)          ← 等窗口出现，比睡 3 秒靠谱
+```
+
+`desktop_launch` 只在三种情况用：
+
+```
+URL 直达       target="https://example.com" → 交给默认浏览器
+要确定返回值   它等窗口出现再回报，不用猜是哪一个新窗口
+名字在开始菜单  "msedge" / "计算器" 这种 PATH 找不到的，走 App Paths 解析
+```
+
+打开方式（改 profile 补丁里 `mcp-desktop` 的 env，重启 DSH）：
+
+```yaml
+env:
+  PYTHONIOENCODING: "utf-8"
+  DESKTOP_MCP_ENABLE_LAUNCH: "1"
+```
+
+关着的时候它**连 schema 都不占** —— 模型看不见，就不会去试。
+
+---
+
+## 坐标系（唯一的真相）
 
 - 位置一律是**全屏物理像素**，原点在主屏左上角；多屏在左侧时 x 可为负
 - 也接受 **0–1000 分数**（`fx`/`fy`），按整个虚拟桌面换算 ——
   只看缩略图也能估位置，不必知道真实分辨率
-- 进程启动时设 **per-monitor-v2 DPI 感知**，所以坐标就是物理像素，
-  不会在 125%/150% 缩放的屏幕上偏移
+- **从截图预览上读坐标时先换算**：原图宽÷预览宽，再乘 DPI 缩放（150% 就再乘 1.5）
+- 不确定窗口在哪、多大 → `desktop_measure_window` 直接给分数坐标
 
 ---
+
+## 常见任务配方
+
+**① 点一个按钮（有树）**
+
+```
+desktop_uia_snapshot(window="设置")
+  → 找到 [12] Button '保存' @...
+desktop_uia_click(index=12)
+```
+
+**② 点一个按钮（只有画面）**
+
+```
+desktop_screenshot(window="某 Electron 应用")
+  → 看图估位置，或先 desktop_measure_window 求分数坐标
+desktop_click(fx=734, fy=812)
+```
+
+**③ 填表单**
+
+```
+desktop_uia_snapshot()  → 找到输入框的 ✎ 节点
+desktop_uia_set_value(index=N, text="……")
+desktop_uia_click(index=保存按钮)
+```
+
+**④ 开应用**
+
+```
+desktop_press("win+r") → desktop_uia_wait_for(control_type="Edit")
+→ desktop_type("edge") → desktop_press("enter")
+→ desktop_uia_wait_for(name="Edge", timeout=10)
+```
+
+**⑤ 等加载，别瞎睡**
+
+```
+desktop_uia_wait_for(name="加载完成", timeout=20)   有树
+desktop_list_windows(query="标题关键词")            没树，看标题变化
+```
+
+**⑥ 复制粘贴**
+
+```
+desktop_clipboard(op="get") 拿一段 → 处理 → desktop_clipboard(op="set", text=结果)
+再在目标窗口里 desktop_press("ctrl+v")
+```
+
+**⑦ 长任务让人能看见**
+
+```
+desktop_highlight(query="目标窗口")   画个框
+…操作若干步…
+desktop_highlight(hide=True)          收起来
+```
 
 ## screenshot 为什么默认截窗口
 

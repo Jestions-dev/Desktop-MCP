@@ -21,6 +21,6 @@ Python 侧只负责起进程、发指令、收进程。
                         受 DPI 缩放影响，实测要 830×530 得到 553×353）
 """
 
-__version__ = "1.0.2"
+__version__ = "1.1.0"
 __all__ = ["server", "tools", "screen", "electron_frame",
            "win32_input", "win32_window"]

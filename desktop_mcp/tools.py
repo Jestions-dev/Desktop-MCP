@@ -21,6 +21,8 @@ from . import win32_input as I
 from . import win32_window as W
 from . import electron_frame as EF
 from . import trajectory as TJ
+from . import uia as UA
+from . import launch as L
 
 
 class ToolError(Exception):
@@ -637,6 +639,85 @@ _COORD_HINT = ("坐标是**全屏物理像素**（原点在主屏左上角），
                "按整个虚拟桌面换算）。⚠ 从截图预览上读坐标时，先按 原图宽÷预览宽 换算回原图，"
                "再乘 DPI 缩放（150% 就再乘 1.5）—— 直接用预览坐标点会偏（踩过）。")
 
+
+# ── UIA：无障碍树那条腿 ─────────────────────────────────────────────────────
+
+def t_snapshot(args: dict):
+    """抓一棵无障碍树（纯文本控件清单）。"""
+    text, hwnd, title = UA.snapshot(
+        args.get("window"),
+        max_depth=int(args.get("max_depth") or 6),
+        max_nodes=int(args.get("max_nodes") or 300),
+        include_offscreen=bool(args.get("include_offscreen")),
+    )
+    hint = ("\n用 desktop_uia_click(index) 点、desktop_uia_set_value(index, text) 写。"
+            "索引只对这份快照有效，界面变了就重新抓。")
+    return text + hint, False, []
+
+
+def t_click_node(args: dict):
+    if args.get("index") is None:
+        raise ToolError("需要 index（快照里方括号里的数字）")
+    return UA.click_node(int(args["index"]), str(args.get("button") or "left"),
+                         int(args.get("clicks") or 1)), False, []
+
+
+def t_set_value(args: dict):
+    if args.get("index") is None:
+        raise ToolError("需要 index")
+    if args.get("text") is None:
+        raise ToolError("需要 text")
+    return UA.set_value(int(args["index"]), str(args["text"])), False, []
+
+
+def t_focus_node(args: dict):
+    if args.get("index") is None:
+        raise ToolError("需要 index")
+    return UA.focus_node(int(args["index"])), False, []
+
+
+def t_wait_for(args: dict):
+    return UA.wait_for(
+        args.get("window"),
+        name=args.get("name"),
+        control_type=args.get("control_type"),
+        timeout=float(args.get("timeout") or 10.0),
+        interval=float(args.get("interval") or 0.25),
+    ), False, []
+
+
+def t_monitors(args: dict):
+    return UA.monitors_text(), False, []
+
+
+def t_clipboard(args: dict):
+    op = str(args.get("op") or "get").lower()
+    if op == "set":
+        if args.get("text") is None:
+            raise ToolError("op=set 需要 text")
+        return UA.clipboard_set(str(args["text"])), False, []
+    return UA.clipboard_get(), False, []
+
+
+
+# ── 启动应用（兜底，默认关闭）──────────────────────────────────────────────
+
+def t_launch(args: dict):
+    target = args.get("target") or args.get("name") or args.get("path")
+    if not target:
+        raise ToolError("需要 target（URL / exe 路径 / 命令名 / 开始菜单名字）")
+    extra = args.get("args") or []
+    if isinstance(extra, str):
+        extra = [extra]
+    return L.launch(
+        str(target),
+        args=[str(a) for a in extra],
+        cwd=args.get("cwd"),
+        wait=float(args.get("wait") or 10.0),
+        expect=args.get("expect"),
+    ), False, []
+
+
 TOOLS: list[dict] = [
     {
         "name": "desktop_screenshot",
@@ -846,6 +927,88 @@ TOOLS: list[dict] = [
                        "常见原因是 node_modules 链接丢了或 Electron 找不到。",
         "inputSchema": {"type": "object", "properties": {}},
     },
+    {
+        "name": "desktop_uia_snapshot",
+        "description": "【UIA 那一腿】抓无障碍树，把窗口里的控件列成**纯文本**：类型、名字、位置，"
+                       "以及能不能点/写/勾。**比截图省 token 且不用猜坐标** —— "
+                       "原生程序（资源管理器、设置、对话框）树很全，优先用它；"
+                       "Electron/Chromium（DSH 自己、VSCode、浏览器）常常只给窗框那几个按钮，"
+                       "那种窗口继续用 desktop_screenshot。\n"
+                       "window：标题关键词 / hwnd / 不传=前台窗口。max_depth 默认 6，max_nodes 默认 300。",
+        "inputSchema": {"type": "object", "properties": {
+            "window": {"type": ["string", "integer"], "description": "标题关键词或 hwnd；不传=前台窗口"},
+            "max_depth": {"type": "number", "description": "最大深度，默认 6，上限 16"},
+            "max_nodes": {"type": "number", "description": "最多几个节点，默认 300，上限 2000"},
+            "include_offscreen": {"type": "boolean", "description": "连不可见节点一起列，默认 false"},
+        }},
+    },
+    {
+        "name": "desktop_uia_click",
+        "description": "【UIA 那一腿】点快照里第 index 个控件（**不是按坐标**，按坐标用 desktop_click）。优先走 UIA 的 Invoke / DoDefaultAction"
+                       "（让程序自己按，不动鼠标、窗口被挡也能按），都不支持才退回鼠标点中心。"
+                       "索引来自 desktop_uia_snapshot，界面变了要重新抓。",
+        "inputSchema": {"type": "object", "properties": {
+            "index": {"type": "number", "description": "快照里方括号里的数字"},
+            "button": {"type": "string", "enum": ["left", "right", "middle"], "description": "默认 left"},
+            "clicks": {"type": "number", "description": "连击次数，默认 1"},
+        }, "required": ["index"]},
+    },
+    {
+        "name": "desktop_uia_set_value",
+        "description": "【UIA 那一腿】往第 index 个控件写文字（按坐标打字用 desktop_type）。优先 ValuePattern（程序自己设值，不动键盘），"
+                       "写不了才点进去全选再打字。输入框优先用它，比 desktop_type 稳。",
+        "inputSchema": {"type": "object", "properties": {
+            "index": {"type": "number", "description": "快照里的索引"},
+            "text": {"type": "string", "description": "要写入的内容"},
+        }, "required": ["index", "text"]},
+    },
+    {
+        "name": "desktop_uia_focus",
+        "description": "把焦点给第 index 个控件（不点它）。",
+        "inputSchema": {"type": "object", "properties": {
+            "index": {"type": "number"},
+        }, "required": ["index"]},
+    },
+    {
+        "name": "desktop_uia_wait_for",
+        "description": "等某个控件出现，比 sleep 固定秒数靠谱：界面什么时候好了让它自己说。"
+                       "name 是名字子串（不区分大小写），control_type 如 Button / Edit / MenuItem。",
+        "inputSchema": {"type": "object", "properties": {
+            "window": {"type": ["string", "integer"], "description": "标题关键词或 hwnd"},
+            "name": {"type": "string", "description": "控件名字子串"},
+            "control_type": {"type": "string", "description": "控件类型，如 Button / Edit / MenuItem"},
+            "timeout": {"type": "number", "description": "最多等几秒，默认 10"},
+            "interval": {"type": "number", "description": "轮询间隔，默认 0.25"},
+        }},
+    },
+    {
+        "name": "desktop_monitors",
+        "description": "枚举显示器：每块显示器的物理像素尺寸与位置，以及虚拟桌面范围。",
+        "inputSchema": {"type": "object", "properties": {}},
+    },
+    {
+        "name": "desktop_clipboard",
+        "description": "读写剪贴板文本。op=get 读（默认），op=set 写。",
+        "inputSchema": {"type": "object", "properties": {
+            "op": {"type": "string", "enum": ["get", "set"], "description": "默认 get"},
+            "text": {"type": "string", "description": "op=set 时要写的文本"},
+        }},
+    },
+    {
+        "name": "desktop_launch",
+        "description": "【兜底工具】启动应用或 URL，然后等新窗口出现并回报它（hwnd / 标题 / 矩形）。"
+                       "平时优先用 desktop_press(\"win+r\") → desktop_type(名字) → desktop_press(\"enter\")，"
+                       "那条路更自然。这个工具用在：要 URL 直达、要确定的返回值、"
+                       "或名字在开始菜单里而 PATH 找不到的情况。\n"
+                       "**默认关闭**：要设环境变量 DESKTOP_MCP_ENABLE_LAUNCH=1 才出现。",
+        "inputSchema": {"type": "object", "properties": {
+            "target": {"type": "string", "description": "URL / exe 路径 / 命令名 / 开始菜单名字（如 msedge、notepad）"},
+            "args": {"type": "array", "items": {"type": "string"}, "description": "传给程序的参数"},
+            "cwd": {"type": "string", "description": "工作目录"},
+            "wait": {"type": "number", "description": "等新窗口出现几秒，默认 10"},
+            "expect": {"type": "string", "description": "标题关键词，多个新窗口时用来挑对的那个"},
+        }, "required": ["target"]},
+    },
 ]
 
 _DISPATCH = {
@@ -866,11 +1029,22 @@ _DISPATCH = {
     "desktop_frame_start": t_frame_start,
     "desktop_frame_stop": t_frame_stop,
     "desktop_frame_status": t_frame_status,
+    "desktop_uia_snapshot": t_snapshot,
+    "desktop_uia_click": t_click_node,
+    "desktop_uia_set_value": t_set_value,
+    "desktop_uia_focus": t_focus_node,
+    "desktop_uia_wait_for": t_wait_for,
+    "desktop_monitors": t_monitors,
+    "desktop_clipboard": t_clipboard,
+    "desktop_launch": t_launch,
 }
 
 
 def list_tools() -> list[dict]:
-    return TOOLS
+    """默认不露出兜底工具：关着连 schema 都不占。"""
+    if L.enabled():
+        return TOOLS
+    return [t for t in TOOLS if t["name"] != "desktop_launch"]
 
 
 def call_tool_ex(name: str, args: dict) -> tuple[str, bool, list[bytes]]:

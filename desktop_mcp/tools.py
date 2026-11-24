@@ -956,7 +956,8 @@ TOOLS: list[dict] = [
     {
         "name": "desktop_uia_set_value",
         "description": "【UIA 那一腿】往第 index 个控件写文字（按坐标打字用 desktop_type）。优先 ValuePattern（程序自己设值，不动键盘），"
-                       "写不了才点进去全选再打字。输入框优先用它，比 desktop_type 稳。",
+                       "写不了才点进去全选再打字。输入框优先用它，比 desktop_type 稳。\n"
+                       "注意：ValuePattern 写完后光标停在**开头** —— 接着用 desktop_type 续写会插到最前面，要追加先 desktop_press(\"ctrl+end\")。",
         "inputSchema": {"type": "object", "properties": {
             "index": {"type": "number", "description": "快照里的索引"},
             "text": {"type": "string", "description": "要写入的内容"},
@@ -972,7 +973,8 @@ TOOLS: list[dict] = [
     {
         "name": "desktop_uia_wait_for",
         "description": "等某个控件出现，比 sleep 固定秒数靠谱：界面什么时候好了让它自己说。"
-                       "name 是名字子串（不区分大小写），control_type 如 Button / Edit / MenuItem。",
+                       "name 是名字子串（不区分大小写），control_type 如 Button / Edit / MenuItem。\n"
+                       "等窗口务必带 control_type=\"Window\" —— 否则可能先命中桌面上的同名图标。",
         "inputSchema": {"type": "object", "properties": {
             "window": {"type": ["string", "integer"], "description": "标题关键词或 hwnd"},
             "name": {"type": "string", "description": "控件名字子串"},

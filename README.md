@@ -208,6 +208,10 @@ time_jitter=0.15 时间也随机化 —— 设 0 会严格照录制节奏，重�
 输入框优先用它，比 desktop_type 稳 —— 不受输入法、焦点、键盘布局影响
 ```
 
+**⚠ 写完之后光标停在开头**。接着用 `desktop_type` 续写会插到最前面（实测：记事本里
+
+「第一行」变成了第四行，因为 ValuePattern 把光标留在 0）。要追加就先 `desktop_press("ctrl+end")`。
+
 #### `desktop_uia_focus` `index`
 
 只把焦点给第 N 个控件，不点它。
@@ -219,7 +223,12 @@ time_jitter=0.15 时间也随机化 —— 设 0 会严格照录制节奏，重�
 ```
 等运行框出现   desktop_uia_wait_for(control_type="Edit", timeout=3)
 等网页加载完   desktop_uia_wait_for(name="登录", timeout=15)
+等窗口起来     desktop_uia_wait_for(name="Edge", control_type="Window", timeout=15)
 ```
+
+**⚠ 不传 control_type 时可能匹配到同名的别的东西。** 实测：等 `name="Edge"` 先命中的是
+桌面上那个「Microsoft Edge」图标（ListItem），不是浏览器窗口 —— 等窗口就带上
+`control_type="Window"`，或者直接 `desktop_list_windows(query=…)` 看标题。
 
 **索引只对同一份快照有效。** 每次 `click` / `set_value` 都会按同样参数重走一遍树再动手（不是拿几秒前的缓存去点），但界面结构变了仍要重新 `snapshot`。
 

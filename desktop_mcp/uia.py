@@ -277,7 +277,10 @@ def set_value(index: int, text: str) -> str:
         pattern = control.GetValuePattern()
         if pattern is not None and not getattr(pattern, "IsNullPattern", False):
             pattern.SetValue(str(text))
-            return f"已写入 [{index}] {ctype} {name!r}（ValuePattern）"
+            # 实测：SetValue 之后光标停在**开头**。接着用 desktop_type 续写会插到最前面，
+            # 要追加就先桌面按键 ctrl+end 再打。
+            return (f"已写入 [{index}] {ctype} {name!r}（ValuePattern；"
+                    f"光标在开头，续写要先 ctrl+end）")
     except Exception:                           # noqa: BLE001
         pass
 

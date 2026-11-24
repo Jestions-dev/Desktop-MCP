@@ -649,6 +649,44 @@ argparse 报错而"工具全部消失"。）
 - 观察框窗口是点击穿透的，不会挡住你自己的操作
 - 装不装、什么时候装，由你决定；不想用时把 DSH 里那条配置删掉即可
 
+## 自己用，不走插件
+
+这个仓库同时是**标准 MCP 服务器**和**一个 DSH 插件壳**（`plugin/`）。两者不是二选一，
+但**自己机器上建议直接用 MCP**，理由都是实测出来的：
+
+```
+插件壳带来的      版本化更新 · 市场一键装 · 图标卡片 · 别人能用
+冻结的项目里      前两条对自己等于没有
+
+插件壳的成本      npm 镜像同步（npmmirror 对新包滞后，实测装不上）
+                  pnpm 依赖树（升级 DSH 时可能被整理掉）
+                  覆盖规则的坑（用 insert 覆盖同 id 会插出两行，MCP 被拉两次）
+                  排查要跨两层（配置 → npm 包 → 实际命令）
+```
+
+所以本机的装法是**一行配置**，改参数就是改那一行：
+
+```yaml
+# ~/.dsh/profiles/<profile>/cordis.patch.yml
+- insert:
+    - id: mcp-desktop
+      name: "@deepseek-ai/dsh-mcp-client"
+      config:
+        serverName: desktop
+        transport: stdio
+        command: "C:/Python314/python.exe"
+        args: ["-m", "desktop_mcp.server"]
+        cwd: "C:/Users/Jestions/.dsh/desktop-mcp"
+        env:
+          PYTHONIOENCODING: "utf-8"
+```
+
+**`plugin/` 留着给市场和别人用**：npm 上是 `dsh-desktop-mcp`，`dsh plugin add` 装完就
+通过官方 MCP 桥接层挂上同一个服务器。两件事不冲突 —— 壳是对外的包装，自己不需要包装。
+
+> 一个具体差别：**插件版没有 `cwd`**，它假设 `desktop_mcp` 已经 `pip install` 进了解释器；
+> 直接配置版可以靠 `cwd` 跑仓库里的源码，改完重启就生效。
+
 ## 许可
 
 MIT

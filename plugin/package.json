@@ -1,6 +1,6 @@
 {
   "name": "dsh-desktop-mcp",
-  "version": "1.1.0",
+  "version": "1.1.1",
   "description": "Windows desktop automation for DeepSeek Harness — screenshots, Win32 input, window control, and a UIA accessibility-tree path, bridged from the desktop-mcp Python MCP server through DSH's in-box MCP client.",
   "license": "MIT",
   "type": "module",

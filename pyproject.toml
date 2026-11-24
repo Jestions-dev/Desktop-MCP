@@ -4,7 +4,7 @@ build-backend = "setuptools.build_meta"
 
 [project]
 name = "desktop-mcp"
-version = "1.0.2"
+version = "1.1.0"
 description = "给 agent 用的桌面操作 MCP 服务器（Windows）：看屏幕、点鼠标、敲键盘、管窗口"
 readme = "README.md"
 requires-python = ">=3.10"
@@ -28,6 +28,7 @@ classifiers = [
 dependencies = [
     "mss>=9.0",
     "Pillow>=10.0",
+    "uiautomation>=2.0",
 ]
 
 [project.optional-dependencies]
@@ -35,7 +36,7 @@ dependencies = [
 dev = []
 
 [project.urls]
-Homepage = "https://github.com/Jestions-dev/desktop-mcp"
+Homepage = "https://github.com/Jestions-dev/Desktop-MCP"
 
 [project.scripts]
 desktop-mcp = "desktop_mcp.server:main"

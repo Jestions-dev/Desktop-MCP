@@ -25,7 +25,9 @@ import base64
 import json
 import sys
 
-__version__ = "1.0.2"     # 1.0.1: 修 SendInput argtypes / 布局 / 绝对定位 / DPI 坐标
+# 版本从包定义读，别在两处各写一份（server.py 之前硬编码成 1.0.2，
+# pip 装的是 1.1.0，启动日志却还印 1.0.2 —— 对不上）
+from . import __version__
 SERVER_NAME = "desktop-mcp"
 
 SUPPORTED_PROTOCOL_VERSIONS = ("2025-06-18", "2025-03-26", "2024-11-05")

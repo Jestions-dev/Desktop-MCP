@@ -1,0 +1,48 @@
+# dsh-desktop-mcp — bundle patch layer
+#
+# 这是一个**配置型 bundle**：它不提供任何 Host / Client 服务，只往 profile 里插一行
+# MCP 客户端，让 DSH 去拉起 desktop-mcp 那个 Python 服务器。
+#
+# 为什么是壳而不是插件：
+#   desktop-mcp 本身是一个标准 MCP 服务器，Claude Desktop / Code、Cursor、DSH 都能用。
+#   把它改写成 DSH 专有插件会丢掉「一套引擎、谁都能接」这件事，而且 UIA（COM）
+#   和 SendInput 那层的细节在 Node 里得靠原生 addon 重做一遍。
+#
+# 前置条件（很重要）：
+#   这条行只负责 spawn，不负责装 Python。目标机器上需要有：
+#     · Python >= 3.10，并且在 PATH 里（命令名 `python`）
+#     · 依赖：pip install mss pillow uiautomation
+#     · 本体：pip install git+https://github.com/Jestions-dev/Desktop-MCP
+#   装好之后 `python -m desktop_mcp.server` 在任意目录都能跑起来，所以这里不需要绝对路径。
+#
+# 想用别的解释器（比如某个 conda / venv）就覆盖这一行的 command / args：
+#
+#   - id: desktop-mcp-bridge
+#     config:
+#       command: 'C:/Python314/python.exe'
+#
+# 工具会以 `desktop_` 前缀出现在模型的工具表里（serverName 决定命名空间）。
+
+- insert:
+    - id: desktop-mcp-bridge
+      name: "@deepseek-ai/dsh-mcp-client"
+      config:
+        # 工具名前缀：desktop_screenshot / desktop_uia_snapshot / …
+        serverName: desktop
+        transport: stdio
+        command: python
+        args:
+          - "-m"
+          - "desktop_mcp.server"
+        env:
+          PYTHONIOENCODING: "utf-8"
+        # 截屏、UIA 树遍历、拖动这类操作本来就慢，给足时间
+        toolCallTimeoutMs: 120000
+        # 缺 Python / 缺依赖时不要让整个 profile 起不来：
+        # 界面上只会显示这个服务器连不上，DSH 本身照常启动
+        failOnStartupError: false
+        reconnect:
+          enabled: true
+          initialDelayMs: 500
+          maxDelayMs: 30000
+          maxAttempts: 10

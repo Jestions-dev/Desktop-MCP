@@ -1,40 +1,75 @@
 # dsh-desktop-mcp
 
-给 **DeepSeek Harness** 用的 Windows 桌面自动化：截屏、Win32 输入、窗口控制，
-外加一条 **UIA 无障碍树**的路 —— 按控件点名操作，不用看图猜坐标。
+**先说明白它是什么**：本体是一个**标准 MCP 服务器**（[`desktop-mcp`](https://github.com/Jestions-dev/Desktop-MCP)），
+任何 MCP 客户端都能直接用 —— Claude Desktop / Code、Cursor、以及 DSH。
+本仓库这个 npm 包只是一个**配置型外壳**：不含业务代码，只负责把那台服务器挂进 DSH。
 
-这个包本身是一个**壳（配置型 bundle）**：它不含任何业务代码，只负责把
-[`desktop-mcp`](https://github.com/Jestions-dev/Desktop-MCP) 这个 **标准 MCP 服务器**
-挂进 DSH；工具由那边提供，协议是 MCP，所以同一套引擎 Claude Desktop / Code、Cursor 也能用。
+所以下面分两条路：**先讲通用 MCP，再讲 DSH 插件**。两条路装的是同一套引擎、同一批工具。
 
-## 装之前
+---
 
-目标机器上要有 **Python 3.10+**（命令名 `python` 在 PATH 里），然后：
+## 一、通用 MCP（任何客户端）
 
-```sh
-pip install mss pillow uiautomation
-pip install git+https://github.com/Jestions-dev/Desktop-MCP
+### 前置条件
+
+```
+系统      Windows（Win32 API + UIA，其他平台跑不了）
+Python    3.10+，命令名 python 在 PATH 里
+依赖      pip install mss pillow uiautomation
+本体      pip install git+https://github.com/Jestions-dev/Desktop-MCP
 ```
 
-验证一下（任意目录）：
+验证（任意目录）：
 
 ```sh
 python -m desktop_mcp.server
 ```
 
-打印 `[desktop-mcp] v1.1.0 就绪（24 个工具）` 就成了，`Ctrl+C` 退出。
+打印下面这行就成了，`Ctrl+C` 退出：
 
-## 装插件
+```
+[desktop-mcp] v1.2.0 就绪（24 个工具）；观察框：按需启动（Electron 子进程）
+```
+
+### 接入客户端
+
+任何支持 stdio 的 MCP 客户端，配置都长这样：
+
+```json
+{
+  "mcpServers": {
+    "desktop": {
+      "command": "python",
+      "args": ["-m", "desktop_mcp.server"],
+      "env": { "PYTHONIOENCODING": "utf-8" }
+    }
+  }
+}
+```
+
+- Claude Desktop 放 `claude_desktop_config.json`；Claude Code 用 `claude mcp add` 或 `~/.claude.json`
+- `PYTHONIOENCODING` 别省 —— 默认 GBK 时 `tools/list` 会在「⚠」这类字符上崩
+- 想用别的解释器就写绝对路径；**Windows 上建议用 `"command": "C:/Python313/python.exe"` 这种正斜杠写法**
+
+---
+
+## 二、DSH（插件版）
+
+DSH 的内置 MCP 客户端只支持 stdio，所以插件壳走的是「启动一个 python 子进程」这条路。
 
 ```sh
 dsh plugin --profile <你的 profile> add dsh-desktop-mcp
 ```
 
-`<profile>`：`dsh web` 用 `web`，桌面应用用 `desktop`。
+`<profile>`：`dsh web` 用 `web`，桌面应用用 `desktop`。装完**重启 DSH** —— 运行中的进程持有内存里的旧插件树。
 
-装完**重启 DSH**——运行中的进程持有内存里的旧插件树。
+### 缺依赖不会报错，只会静默没有工具
 
-## 想换解释器 / 加参数
+插件里 `failOnStartupError: false`：python 起不来、或者缺 `mss` / `pillow` / `uiautomation`
+时，**DSH 照常启动，只是 `desktop_` 那些工具一个都不出现**。所以工具不见了先跑一次
+`python -m desktop_mcp.server` 看真实报错，别在插件配置里找。
+
+### 想换解释器 / 加参数
 
 **覆盖 bundle 里的行，直接写同 id 的行 —— 不要用 `insert`。**
 
@@ -50,6 +85,8 @@ dsh plugin --profile <你的 profile> add dsh-desktop-mcp
 
 patch 对同 id 是**整块替换 config**；写成 `insert:` 会再插一行，结果同一个 id 出现两次
 （实测踩过：dump 出来两份，MCP 服务器被拉起两个）。
+
+---
 
 ## 装完看到什么
 
